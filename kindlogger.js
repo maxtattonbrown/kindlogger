@@ -1,6 +1,7 @@
 // ================================================
-// Kindle Library Exporter
-// Exports all books from Amazon's "Manage Your Content" page
+// Kindlogger — Export your Kindle library as AI-ready JSON
+// https://github.com/maxtattonbrown/kindlogger
+//
 // Run this in your browser console while on:
 // https://www.amazon.co.uk/hz/mycd/digital-console/contentlist/booksAll/dateDsc/
 // (Also works on amazon.com and other regional Amazon sites)
@@ -11,60 +12,93 @@
 
   var sleep = function(ms) { return new Promise(function(r) { setTimeout(r, ms); }); };
   var books = [];
-  var seen = new Set();
+  var seenAsins = new Set();
 
-  var TITLE_SELECTOR = '[id^="content-title-"], .digital_entity_title, a[id*="title"]';
-  var AUTHOR_SELECTOR = '[id^="content-author-"], .information_row';
-  var FALLBACK_ROW_SELECTOR = '[class*="ListItem"], [class*="contentRow"]';
-  var FALLBACK_TITLE_SELECTOR = '[class*="title"], [class*="Title"]';
-  var FALLBACK_AUTHOR_SELECTOR = '[class*="author"], [class*="Author"]';
-
-  function getFirstTitle() {
-    var rows = document.querySelectorAll("tr");
-    for (var i = 0; i < rows.length; i++) {
-      var titleEl = rows[i].querySelector(TITLE_SELECTOR);
-      if (titleEl) return titleEl.textContent.trim();
-    }
-    var items = document.querySelectorAll(FALLBACK_ROW_SELECTOR);
-    for (var j = 0; j < items.length; j++) {
-      var te = items[j].querySelector(FALLBACK_TITLE_SELECTOR);
-      if (te && te.textContent.trim().length > 2) return te.textContent.trim();
-    }
-    return null;
-  }
-
-  function cleanAuthor(text) {
-    return text.replace(/^by\s+/i, "").trim();
+  function getFirstAsin() {
+    var checkbox = document.querySelector('input[id$=":KindleEBook"], input[id$=":KindleBook"]');
+    return checkbox ? checkbox.id.split(":")[0] : null;
   }
 
   function scrape() {
     var added = 0;
-    var rows = document.querySelectorAll("tr");
-    for (var i = 0; i < rows.length; i++) {
-      var row = rows[i];
-      var titleEl = row.querySelector(TITLE_SELECTOR);
-      if (!titleEl) continue;
-      var title = titleEl.textContent.trim();
-      if (!title || title.length < 2 || seen.has(title.toLowerCase())) continue;
-      seen.add(title.toLowerCase());
-      var authorEl = row.querySelector(AUTHOR_SELECTOR);
-      var author = authorEl ? cleanAuthor(authorEl.textContent) : "";
-      books.push({ title: title, author: author });
+    var checkboxes = document.querySelectorAll('input[id$=":KindleEBook"], input[id$=":KindleBook"], input[id$=":Sample"]');
+    checkboxes.forEach(function(cb) {
+      var parts = cb.id.split(":");
+      var asin = parts[0];
+      var format = parts[1] || "unknown";
+      if (!asin || seenAsins.has(asin)) return;
+      seenAsins.add(asin);
+
+      var titleEl = document.querySelector("#content-title-" + asin);
+      var authorEl = document.querySelector("#content-author-" + asin);
+      var dateEl = document.querySelector("#content-acquired-date-" + asin);
+      var imageEl = document.querySelector("#content-image-" + asin + " img");
+      var readBadge = null;
+      if (titleEl) {
+        var row = titleEl.closest("tr") || titleEl.closest("div");
+        if (row) readBadge = row.querySelector("#content-read-badge");
+      }
+
+      var title = titleEl ? titleEl.textContent.trim() : "";
+      var author = authorEl ? authorEl.textContent.replace(/^by\s+/i, "").trim() : "";
+      var acquiredRaw = dateEl ? dateEl.textContent.trim() : "";
+      var acquired = acquiredRaw.replace(/^Acquired on\s*/i, "").trim();
+      var read = readBadge ? readBadge.textContent.trim() === "READ" : false;
+      var cover = imageEl ? imageEl.src : "";
+
+      // Extract collection names this book belongs to
+      var collectionsEl = document.querySelector('[id="AddOrRemoveFromCollection_' + asin + '"]');
+      var collections = [];
+      if (collectionsEl) {
+        var collItems = collectionsEl.querySelectorAll('[id^="AddOrRemoveFromCollection_' + asin + '_"]');
+        collItems.forEach(function(item) {
+          if (item.id.indexOf("checkmark") > -1) return;
+          var label = item.closest("label");
+          if (label) {
+            var checkbox = label.querySelector("input");
+            if (checkbox && checkbox.checked) {
+              var name = label.textContent.trim();
+              if (name) collections.push(name);
+            }
+          }
+        });
+      }
+
+      var region = window.location.hostname.replace("www.amazon.", "");
+      var book = {
+        asin: asin,
+        title: title,
+        author: author,
+        acquired: acquired || null,
+        read: read,
+        format: format,
+        link: "https://www.amazon." + region + "/dp/" + asin
+      };
+      if (cover) book.cover = cover;
+      if (collections.length > 0) book.collections = collections;
+
+      books.push(book);
       added++;
-    }
+    });
+
+    // Fallback for rows without checkbox IDs
     if (added === 0) {
-      document.querySelectorAll(FALLBACK_ROW_SELECTOR).forEach(function(item) {
-        var te = item.querySelector(FALLBACK_TITLE_SELECTOR);
-        var title = te ? te.textContent.trim() : null;
-        if (!title || title.length < 2 || title.length > 300 || seen.has(title.toLowerCase())) return;
-        if (/^(select|action|title|author|date|show|filter)/i.test(title)) return;
-        seen.add(title.toLowerCase());
-        var ae = item.querySelector(FALLBACK_AUTHOR_SELECTOR);
-        var author = ae ? cleanAuthor(ae.textContent) : "";
-        books.push({ title: title, author: author });
+      var rows = document.querySelectorAll("tr");
+      for (var i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        var te = row.querySelector('[id^="content-title-"], .digital_entity_title');
+        if (!te) continue;
+        var title = te.textContent.trim();
+        var key = title.toLowerCase();
+        if (!title || seenAsins.has(key)) continue;
+        seenAsins.add(key);
+        var ae = row.querySelector('[id^="content-author-"], .information_row');
+        var author = ae ? ae.textContent.replace(/^by\s+/i, "").trim() : "";
+        books.push({ title: title, author: author, read: false });
         added++;
-      });
+      }
     }
+
     return added;
   }
 
@@ -83,16 +117,15 @@
     return max;
   }
 
-  async function waitForNewContent(oldFirstTitle, targetPage) {
+  async function waitForNewContent(oldAsin, targetPage) {
     var elapsed = 0;
     while (elapsed < MAX_WAIT_FOR_CONTENT) {
       var currentPage = getActivePage();
-      var currentTitle = getFirstTitle();
-      if (currentPage === targetPage && currentTitle && currentTitle !== oldFirstTitle) return true;
+      var currentAsin = getFirstAsin();
+      if (currentPage === targetPage && currentAsin && currentAsin !== oldAsin) return true;
       await sleep(500);
       elapsed += 500;
     }
-    // Page number changed but content might be the same (rare duplicate titles)
     return getActivePage() === targetPage;
   }
 
@@ -104,7 +137,6 @@
     var targetPage = currentPage + 1;
     var btn = findPageButton(targetPage);
     if (!btn) {
-      // Pagination may not have rendered yet
       await sleep(3000);
       btn = findPageButton(targetPage);
       if (!btn) return false;
@@ -116,7 +148,6 @@
   async function scrapeWithRetry(page) {
     window.scrollTo(0, document.body.scrollHeight);
     await sleep(800);
-
     var added = scrape();
     for (var r = 0; r < RETRY_DELAYS.length && added === 0; r++) {
       console.log("  Page " + page + ": retrying in " + (RETRY_DELAYS[r] / 1000) + "s...");
@@ -131,7 +162,7 @@
   var totalPages = getTotalPages();
   var currentPage = getActivePage() || 1;
   var failures = 0;
-  console.log("Kindle Exporter: scanning " + totalPages + " pages...");
+  console.log("Kindlogger: scanning " + totalPages + " pages...");
 
   for (var p = currentPage; p <= totalPages; p++) {
     var added = await scrapeWithRetry(p);
@@ -149,19 +180,19 @@
 
     if (p >= totalPages) break;
 
-    var oldFirstTitle = getFirstTitle();
+    var oldAsin = getFirstAsin();
     var clicked = await clickNextPage(p);
     if (!clicked) {
       console.log("Could not find next page button at page " + p + ". Stopping.");
       break;
     }
 
-    var contentChanged = await waitForNewContent(oldFirstTitle, p + 1);
+    var contentChanged = await waitForNewContent(oldAsin, p + 1);
     if (!contentChanged) {
       console.log("  Page " + (p + 1) + " content slow. Retrying click...");
       await sleep(3000);
       clicked = await clickNextPage(p);
-      if (clicked) await waitForNewContent(oldFirstTitle, p + 1);
+      if (clicked) await waitForNewContent(oldAsin, p + 1);
     }
 
     if (p % 10 === 0) {
@@ -175,16 +206,29 @@
     return;
   }
 
-  console.log("DONE: " + books.length + " books from " + totalPages + " pages");
-  var blob = new Blob([JSON.stringify(books, null, 2)], { type: "application/json" });
+  // Wrap in metadata envelope
+  var output = {
+    kindlogger: {
+      version: "1.0.0",
+      exported: new Date().toISOString(),
+      region: window.location.hostname,
+      total: books.length,
+      read: books.filter(function(b) { return b.read; }).length,
+      unread: books.filter(function(b) { return !b.read; }).length
+    },
+    books: books
+  };
+
+  console.log("DONE: " + books.length + " books (" + output.kindlogger.read + " read, " + output.kindlogger.unread + " unread)");
+  var blob = new Blob([JSON.stringify(output, null, 2)], { type: "application/json" });
   var dlUrl = URL.createObjectURL(blob);
   var a = document.createElement("a");
   a.href = dlUrl;
-  a.download = "kindle-books.json";
+  a.download = "kindlogger-export.json";
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(dlUrl);
-  console.table(books.slice(0, 10));
-  alert(books.length + " Kindle books exported as kindle-books.json");
+  console.table(books.slice(0, 10).map(function(b) { return { title: b.title.substring(0, 60), author: b.author, read: b.read, acquired: b.acquired }; }));
+  alert("Kindlogger: " + books.length + " books exported (" + output.kindlogger.read + " read, " + output.kindlogger.unread + " unread)\n\nDownloaded as kindlogger-export.json");
 })();
