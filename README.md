@@ -111,6 +111,17 @@ Drop `kindlogger-complete.json` into Claude, ChatGPT, or any AI. Some prompts to
 - A web browser (Chrome, Firefox, Edge, Safari)
 - Python 3 (for enrichment — no pip packages needed, uses only the standard library)
 
+## Claude Code skill (optional)
+
+If you use [Claude Code](https://claude.ai/code), copy the skill file to make your library queryable in any conversation:
+
+```bash
+mkdir -p ~/.claude/skills/kindle
+cp claude-skill/skill.md ~/.claude/skills/kindle/skill.md
+```
+
+Then use `/kindle` or just ask "what should I read next?" and Claude will load your library and answer.
+
 ## v2: One-command CLI (coming soon)
 
 A Playwright-powered version that does everything in one command:
