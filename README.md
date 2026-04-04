@@ -122,15 +122,35 @@ cp claude-skill/skill.md ~/.claude/skills/kindle/skill.md
 
 Then use `/kindle` or just ask "what should I read next?" and Claude will load your library and answer.
 
-## v2: One-command CLI (coming soon)
+## v2: One-command CLI
 
-A Playwright-powered version that does everything in one command:
+A Playwright-powered version that does everything in one command. No console-pasting required.
 
 ```bash
-npx kindlogger
+cd cli
+npm install
+npx playwright install chromium
+node index.js
 ```
 
-Opens a browser for Amazon login (once), then automatically exports your library, scrapes highlights, enriches from Open Library, and outputs the complete JSON. No console-pasting required.
+A Chrome window opens for Amazon login (first time only — cookies are saved to `~/.kindlogger/`). After login, it automatically:
+1. Scrapes your full library from "Manage Your Content"
+2. Scrapes highlights from Kindle Notebook
+3. Enriches from Open Library
+4. Outputs `kindlogger-complete.json`
+
+**Options:**
+```
+--region <code>      Amazon region: uk, us, de, fr, it, es, ca, jp, in, au (default: uk)
+--skip-highlights    Skip highlight scraping
+--skip-enrich        Skip Open Library enrichment (saves ~12 min)
+--output <file>      Output filename (default: kindlogger-complete.json)
+```
+
+**Quick test run:**
+```bash
+node index.js --skip-enrich    # Library + highlights only (~5 min)
+```
 
 ## How it works
 

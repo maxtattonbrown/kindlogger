@@ -1,0 +1,19 @@
+{
+  "name": "kindlogger",
+  "version": "2.0.0",
+  "description": "Export your Kindle library as AI-ready JSON",
+  "bin": {
+    "kindlogger": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "playwright": "^1.52.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/maxtattonbrown/kindlogger"
+  }
+}
