@@ -29,7 +29,8 @@ function loadConfig() {
   var config = {
     region: process.env.KINDLOGGER_REGION || 'uk',
     wishlistId: process.env.KINDLOGGER_WISHLIST_ID || null,
-    output: process.env.KINDLOGGER_OUTPUT || path.join(os.homedir(), 'kindle-deals-today.md')
+    output: process.env.KINDLOGGER_OUTPUT || path.join(os.homedir(), 'kindle-deals-today.md'),
+    monthlyNoteDir: process.env.KINDLOGGER_MONTHLY_DIR || null
   };
 
   // Override from config file if it exists
@@ -329,19 +330,19 @@ function formatMatch(m) {
   return '- ' + titleMd + author + price + reasons;
 }
 
-function formatDigest(wishlistMatches, dealMatches, date) {
+function formatDealsSection(wishlistMatches, dealMatches) {
   var lines = [];
-  lines.push('## Kindle Deals — ' + date);
+  lines.push('### 📚 Kindle deals');
   lines.push('');
 
   if (wishlistMatches.length > 0) {
-    lines.push('### From your wishlist');
+    lines.push('**From your wishlist:**');
     wishlistMatches.forEach(function(m) { lines.push(formatMatch(m)); });
     lines.push('');
   }
 
   if (dealMatches.length > 0) {
-    lines.push('### Today\'s deals matching your taste');
+    lines.push('**Today\'s deals matching your taste:**');
     dealMatches.forEach(function(m) { lines.push(formatMatch(m)); });
     lines.push('');
   }
@@ -352,6 +353,81 @@ function formatDigest(wishlistMatches, dealMatches, date) {
   }
 
   return lines.join('\n');
+}
+
+function formatStandaloneDigest(wishlistMatches, dealMatches, date) {
+  var lines = [];
+  lines.push('## Kindle Deals — ' + date);
+  lines.push('');
+  lines.push(formatDealsSection(wishlistMatches, dealMatches));
+  return lines.join('\n');
+}
+
+// Find today's daily heading in the monthly note, or create it.
+// Then insert/replace the deals section under it.
+function updateMonthlyNote(monthlyPath, dealsSection, dayLabel) {
+  var content = '';
+  if (fs.existsSync(monthlyPath)) {
+    content = fs.readFileSync(monthlyPath, 'utf8');
+  } else {
+    // Create skeleton if missing
+    content = '#daynotes #orbit\n\n----\n\n';
+  }
+
+  // Find or create today's heading (e.g. "## 7 April")
+  var dayHeadingRegex = new RegExp('^## ' + dayLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*$', 'm');
+  var dayMatch = content.match(dayHeadingRegex);
+
+  if (!dayMatch) {
+    // Add new day heading at the top of entries (after the front matter)
+    var insertAt = content.search(/^## /m);
+    if (insertAt === -1) {
+      // No existing headings — append
+      content = content.trimEnd() + '\n\n## ' + dayLabel + '\n\n' + dealsSection + '\n';
+    } else {
+      content = content.substring(0, insertAt) + '## ' + dayLabel + '\n\n' + dealsSection + '\n\n' + content.substring(insertAt);
+    }
+    return content;
+  }
+
+  // Day heading exists — find its boundaries
+  var dayStart = dayMatch.index + dayMatch[0].length;
+  var nextHeadingMatch = content.substring(dayStart).match(/^## /m);
+  var dayEnd = nextHeadingMatch ? dayStart + nextHeadingMatch.index : content.length;
+  var daySection = content.substring(dayStart, dayEnd);
+
+  // Look for existing "### 📚 Kindle deals" subsection within today
+  var dealsHeadingRegex = /^### 📚 Kindle deals\s*$/m;
+  var dealsMatch = daySection.match(dealsHeadingRegex);
+
+  if (dealsMatch) {
+    // Replace existing deals subsection
+    var dealsStart = dealsMatch.index;
+    var afterDeals = daySection.substring(dealsStart + dealsMatch[0].length);
+    var nextSubMatch = afterDeals.match(/^### |^## /m);
+    var dealsEnd = nextSubMatch
+      ? dealsStart + dealsMatch[0].length + nextSubMatch.index
+      : daySection.length;
+    var newDaySection = daySection.substring(0, dealsStart) + dealsSection.trimEnd() + '\n\n' + daySection.substring(dealsEnd);
+    return content.substring(0, dayStart) + newDaySection + content.substring(dayEnd);
+  } else {
+    // Insert deals subsection right after the day heading
+    var newDaySection = '\n\n' + dealsSection.trimEnd() + '\n' + daySection;
+    return content.substring(0, dayStart) + newDaySection + content.substring(dayEnd);
+  }
+}
+
+function getMonthlyNotePath(vaultInbox, now) {
+  var year = now.getFullYear();
+  var month = String(now.getMonth() + 1).padStart(2, '0');
+  var monthName = now.toLocaleDateString('en-GB', { month: 'long' });
+  return path.join(vaultInbox, year + '-' + month + ' ' + monthName + '.md');
+}
+
+function getDayLabel(now) {
+  var day = now.getDate();
+  var monthName = now.toLocaleDateString('en-GB', { month: 'long' });
+  return day + ' ' + monthName;
 }
 
 async function main() {
@@ -429,21 +505,31 @@ async function main() {
     console.log('Wishlist matches: ' + wishlistMatches.length);
     console.log('Deal matches: ' + dealMatches.length);
 
-    // Format and write to configured output path
     var now = new Date();
     var dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-    var digest = formatDigest(wishlistMatches, dealMatches, dateStr);
+    var dealsSection = formatDealsSection(wishlistMatches, dealMatches);
 
-    // Make sure output directory exists
+    // Write to monthly note (preferred surface)
+    if (config.monthlyNoteDir) {
+      if (!fs.existsSync(config.monthlyNoteDir)) {
+        fs.mkdirSync(config.monthlyNoteDir, { recursive: true });
+      }
+      var monthlyPath = getMonthlyNotePath(config.monthlyNoteDir, now);
+      var dayLabel = getDayLabel(now);
+      var newContent = updateMonthlyNote(monthlyPath, dealsSection, dayLabel);
+      fs.writeFileSync(monthlyPath, newContent);
+      console.log('Updated monthly note: ' + monthlyPath + ' (under "## ' + dayLabel + '")');
+    }
+
+    // Also write standalone digest (for backwards compat / digest builders)
+    var standaloneDigest = formatStandaloneDigest(wishlistMatches, dealMatches, dateStr);
     var outDir = path.dirname(config.output);
     if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+    fs.writeFileSync(config.output, standaloneDigest);
+    console.log('Written standalone: ' + config.output);
 
-    fs.writeFileSync(config.output, digest);
-    console.log('Written to: ' + config.output);
-
-    // Also print
     console.log('');
-    console.log(digest);
+    console.log(standaloneDigest);
 
   } catch (err) {
     console.error('Error: ' + err.message);

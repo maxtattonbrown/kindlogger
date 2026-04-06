@@ -169,13 +169,16 @@ node cli/deals.js
 {
   "region": "uk",
   "wishlistId": "XXXXXXXXXX",
-  "output": "/path/to/your/notes/kindle-deals-today.md"
+  "output": "/path/to/your/notes/kindle-deals-today.md",
+  "monthlyNoteDir": "/path/to/your/notes/Inbox"
 }
 ```
 
 3. Make sure you've run `node index.js` at least once so the browser has your Amazon login cookies
 
 Supports `uk`, `us`, `de`, `fr`, `it`, `es`, `ca`, `jp`, `au` regions. The `wishlistId` is optional — without it, only the daily deals page is checked.
+
+**Monthly note integration:** If you set `monthlyNoteDir`, deals also get appended to a monthly note file (e.g. `2026-04 April.md`) under a `## 6 April` daily heading. Reruns replace the existing deals subsection rather than duplicating, so it stays clean. Perfect for Obsidian users who already have a monthly note habit — the deals show up in the file you already check each morning.
 
 **Run it daily via launchd (macOS):**
 

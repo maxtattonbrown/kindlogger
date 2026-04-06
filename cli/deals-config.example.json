@@ -1,5 +1,6 @@
 {
   "region": "uk",
   "wishlistId": "YOUR_WISHLIST_ID_HERE",
-  "output": "/path/to/your/notes/kindle-deals-today.md"
+  "output": "/path/to/your/notes/kindle-deals-today.md",
+  "monthlyNoteDir": "/path/to/your/notes/Inbox"
 }
