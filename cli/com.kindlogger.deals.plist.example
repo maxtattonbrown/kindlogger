@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Example launchd config for running Kindlogger deals check at 6am daily.
+
+  Setup:
+    1. Edit the PATHS below to match your system:
+       - node binary: run `which node` to find it
+       - deals.js path: where you cloned the kindlogger repo
+    2. Copy to ~/Library/LaunchAgents/
+    3. Load with: launchctl load ~/Library/LaunchAgents/com.kindlogger.deals.plist
+    4. Unload with: launchctl unload ~/Library/LaunchAgents/com.kindlogger.deals.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.kindlogger.deals</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/path/to/node</string>
+        <string>/path/to/kindlogger/cli/deals.js</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>6</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/tmp/kindlogger-deals.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/kindlogger-deals.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

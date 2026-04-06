@@ -152,6 +152,51 @@ A Chrome window opens for Amazon login (first time only — cookies are saved to
 node index.js --skip-enrich    # Library + highlights only (~5 min)
 ```
 
+## Daily deals digest
+
+Kindlogger can also check Amazon's Kindle Daily Deals and your wishlist each morning, score the matches against your taste profile, and write a markdown digest to a file of your choosing (perfect for a vault, notes app, or daily review).
+
+```bash
+node cli/deals.js
+```
+
+**First-time setup:**
+
+1. Find your wishlist ID — open your wishlist on Amazon, copy the ID from the URL: `amazon.co.uk/hz/wishlist/ls/XXXXXXXXXX`
+2. Create `~/.kindlogger/deals-config.json`:
+
+```json
+{
+  "region": "uk",
+  "wishlistId": "XXXXXXXXXX",
+  "output": "/path/to/your/notes/kindle-deals-today.md"
+}
+```
+
+3. Make sure you've run `node index.js` at least once so the browser has your Amazon login cookies
+
+Supports `uk`, `us`, `de`, `fr`, `it`, `es`, `ca`, `jp`, `au` regions. The `wishlistId` is optional — without it, only the daily deals page is checked.
+
+**Run it daily via launchd (macOS):**
+
+```bash
+# Copy the example plist, edit paths, then:
+launchctl load ~/Library/LaunchAgents/com.kindlogger.deals.plist
+```
+
+**How scoring works:** Each deal is scored based on (1) whether the author matches your top 20 read authors, (2) keyword matching against your most-read genres (history, biography, sci-fi, etc), and (3) price. Books in obvious off-taste genres (paranormal romance, vampire YA, etc) are filtered out. Wishlist items are sorted by price ascending.
+
+## Ethics and Amazon's Terms of Service
+
+Kindlogger is built for **personal use by individuals exporting their own data**. It uses a real browser (Playwright) with your own login session, and runs at most once a day for any given user.
+
+- **Don't run it on a schedule faster than once a day** — Amazon rate limits and may throttle
+- **Don't share or redistribute scraped data** — this is your library, not everyone's
+- **Don't run it against accounts you don't own** — that's not what this is for
+- Amazon's Terms of Service prohibit broad "automated access" but have never been enforced against individuals scraping their own data. Use at your own risk.
+
+If you're building something commercial or at scale, use the [Amazon Product Advertising API](https://webservices.amazon.com/paapi5/documentation/) instead.
+
 ## How it works
 
 **Library export:** Reads Amazon's "Manage Your Content" page. Uses each book's ASIN to extract title, author, acquisition date, read status, and cover image. Clicks through pagination waiting for content to load between pages.

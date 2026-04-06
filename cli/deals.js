@@ -9,9 +9,54 @@ const path = require('path');
 const os = require('os');
 
 const COOKIE_DIR = path.join(os.homedir(), '.kindlogger');
-const WISHLIST_URL = 'https://www.amazon.co.uk/hz/wishlist/ls/2IAB85KYVR396?type=wishlist&filter=unpurchased&sort=price-asc&viewType=list';
-const DEALS_URL = 'https://www.amazon.co.uk/Kindle-Daily-Deals/b?ie=UTF8&node=5400977031';
-const VAULT_PATH = path.join(os.homedir(), 'MTBvault');
+const CONFIG_PATH = path.join(os.homedir(), '.kindlogger', 'deals-config.json');
+
+// Amazon region config: each has its own deals node ID
+const REGIONS = {
+  'uk': { domain: 'amazon.co.uk', dealsNode: '5400977031' },
+  'us': { domain: 'amazon.com', dealsNode: '2492629011' },
+  'de': { domain: 'amazon.de', dealsNode: '530887031' },
+  'fr': { domain: 'amazon.fr', dealsNode: '4644376031' },
+  'it': { domain: 'amazon.it', dealsNode: '827188031' },
+  'es': { domain: 'amazon.es', dealsNode: '827243031' },
+  'ca': { domain: 'amazon.ca', dealsNode: '4851825011' },
+  'jp': { domain: 'amazon.co.jp', dealsNode: '2293143051' },
+  'au': { domain: 'amazon.com.au', dealsNode: '4851809051' }
+};
+
+function loadConfig() {
+  // Default config
+  var config = {
+    region: process.env.KINDLOGGER_REGION || 'uk',
+    wishlistId: process.env.KINDLOGGER_WISHLIST_ID || null,
+    output: process.env.KINDLOGGER_OUTPUT || path.join(os.homedir(), 'kindle-deals-today.md')
+  };
+
+  // Override from config file if it exists
+  if (fs.existsSync(CONFIG_PATH)) {
+    try {
+      var fileConfig = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+      Object.assign(config, fileConfig);
+    } catch (e) {
+      console.error('Warning: could not parse ' + CONFIG_PATH + ': ' + e.message);
+    }
+  }
+
+  // Validate
+  if (!REGIONS[config.region]) {
+    console.error('Unknown region: ' + config.region + '. Supported: ' + Object.keys(REGIONS).join(', '));
+    process.exit(1);
+  }
+
+  var region = REGIONS[config.region];
+  config.domain = region.domain;
+  config.dealsUrl = 'https://www.' + region.domain + '/b?ie=UTF8&node=' + region.dealsNode;
+  config.wishlistUrl = config.wishlistId
+    ? 'https://www.' + region.domain + '/hz/wishlist/ls/' + config.wishlistId + '?type=wishlist&filter=unpurchased&sort=price-asc&viewType=list'
+    : null;
+
+  return config;
+}
 
 function loadTasteProfile() {
   const paths = [
@@ -159,8 +204,8 @@ function scoreBook(book, taste) {
   return { score: score, reasons: reasons };
 }
 
-async function scrapeWishlist(page) {
-  await page.goto(WISHLIST_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+async function scrapeWishlist(page, wishlistUrl) {
+  await page.goto(wishlistUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
   await page.waitForTimeout(2000);
 
   return await page.evaluate(function() {
@@ -191,8 +236,8 @@ async function scrapeWishlist(page) {
   });
 }
 
-async function scrapeDeals(page) {
-  await page.goto(DEALS_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+async function scrapeDeals(page, dealsUrl) {
+  await page.goto(dealsUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
   await page.waitForTimeout(3000);
 
   return await page.evaluate(function() {
@@ -310,6 +355,7 @@ function formatDigest(wishlistMatches, dealMatches, date) {
 }
 
 async function main() {
+  var config = loadConfig();
   var taste = loadTasteProfile();
   if (!taste) {
     console.error('No Kindlogger export found. Run kindlogger first.');
@@ -317,6 +363,10 @@ async function main() {
   }
 
   console.log('Kindle Deals Checker');
+  console.log('Region: ' + config.region + ' (' + config.domain + ')');
+  if (!config.wishlistId) {
+    console.log('No wishlist configured. Set KINDLOGGER_WISHLIST_ID or add wishlistId to ~/.kindlogger/deals-config.json');
+  }
   console.log('');
 
   if (!fs.existsSync(COOKIE_DIR)) fs.mkdirSync(COOKIE_DIR, { recursive: true });
@@ -333,21 +383,23 @@ async function main() {
   var page = await context.newPage();
 
   try {
-    // Scrape wishlist
-    console.log('Checking wishlist...');
+    // Scrape wishlist (only if configured)
     var wishlistItems = [];
-    try {
-      wishlistItems = await scrapeWishlist(page);
-      console.log('  Found ' + wishlistItems.length + ' wishlist items');
-    } catch (e) {
-      console.log('  Wishlist scrape failed: ' + e.message);
+    if (config.wishlistUrl) {
+      console.log('Checking wishlist...');
+      try {
+        wishlistItems = await scrapeWishlist(page, config.wishlistUrl);
+        console.log('  Found ' + wishlistItems.length + ' wishlist items');
+      } catch (e) {
+        console.log('  Wishlist scrape failed: ' + e.message);
+      }
     }
 
     // Scrape deals
     console.log('Checking daily deals...');
     var dealItems = [];
     try {
-      dealItems = await scrapeDeals(page);
+      dealItems = await scrapeDeals(page, config.dealsUrl);
       console.log('  Found ' + dealItems.length + ' deals');
     } catch (e) {
       console.log('  Deals scrape failed: ' + e.message);
@@ -377,15 +429,17 @@ async function main() {
     console.log('Wishlist matches: ' + wishlistMatches.length);
     console.log('Deal matches: ' + dealMatches.length);
 
-    // Format and write to vault
+    // Format and write to configured output path
     var now = new Date();
     var dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
     var digest = formatDigest(wishlistMatches, dealMatches, dateStr);
 
-    // Write to a file the overnight digest can include
-    var outPath = path.join(VAULT_PATH, 'Inbox', 'kindle-deals-today.md');
-    fs.writeFileSync(outPath, digest);
-    console.log('Written to: ' + outPath);
+    // Make sure output directory exists
+    var outDir = path.dirname(config.output);
+    if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+
+    fs.writeFileSync(config.output, digest);
+    console.log('Written to: ' + config.output);
 
     // Also print
     console.log('');
