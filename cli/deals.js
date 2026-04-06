@@ -378,14 +378,18 @@ function updateMonthlyNote(monthlyPath, dealsSection, dayLabel) {
   var dayHeadingRegex = new RegExp('^## ' + dayLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*$', 'm');
   var dayMatch = content.match(dayHeadingRegex);
 
+  // Morning briefing pointer — one-line reminder of what to check this morning
+  var morningPointer = '*Morning briefing: [[overnight-digest]] · [[kindle-deals-today]]*';
+
   if (!dayMatch) {
     // Add new day heading at the top of entries (after the front matter)
+    var newDayBlock = '## ' + dayLabel + '\n\n' + morningPointer + '\n\n' + dealsSection + '\n\n';
     var insertAt = content.search(/^## /m);
     if (insertAt === -1) {
       // No existing headings — append
-      content = content.trimEnd() + '\n\n## ' + dayLabel + '\n\n' + dealsSection + '\n';
+      content = content.trimEnd() + '\n\n' + newDayBlock;
     } else {
-      content = content.substring(0, insertAt) + '## ' + dayLabel + '\n\n' + dealsSection + '\n\n' + content.substring(insertAt);
+      content = content.substring(0, insertAt) + newDayBlock + content.substring(insertAt);
     }
     return content;
   }
@@ -395,6 +399,11 @@ function updateMonthlyNote(monthlyPath, dealsSection, dayLabel) {
   var nextHeadingMatch = content.substring(dayStart).match(/^## /m);
   var dayEnd = nextHeadingMatch ? dayStart + nextHeadingMatch.index : content.length;
   var daySection = content.substring(dayStart, dayEnd);
+
+  // Ensure morning pointer exists (idempotent check)
+  if (daySection.indexOf('Morning briefing:') === -1) {
+    daySection = '\n\n' + morningPointer + daySection;
+  }
 
   // Look for existing "### 📚 Kindle deals" subsection within today
   var dealsHeadingRegex = /^### 📚 Kindle deals\s*$/m;
